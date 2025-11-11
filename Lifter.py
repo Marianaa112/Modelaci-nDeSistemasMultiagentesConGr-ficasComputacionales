@@ -1,0 +1,607 @@
+import pygame, random, math, numpy
+from pygame.locals import *
+from Cubo import Cubo
+from OpenGL.GL import *
+from OpenGL.GLU import *
+from OpenGL.GLUT import *
+import csv
+import os
+from datetime import datetime
+
+# Variables globales 
+NodosVisita = None
+A = None
+matrix_size = None
+world_size = 100
+
+def generar_matriz_adyacencia(filas, columnas):
+    n = filas * columnas
+    A = numpy.zeros((n, n), dtype=int)
+    direcciones = [(-1, 0), (1, 0), (0, -1), (0, 1),
+                   (-1, -1), (-1, 1), (1, -1), (1, 1)]
+    for f in range(filas):
+        for c in range(columnas):
+            i = f * columnas + c
+            for df, dc in direcciones:
+                nf, nc = f + df, c + dc
+                if 0 <= nf < filas and 0 <= nc < columnas:
+                    j = nf * columnas + nc
+                    A[i, j] = 1
+    return A
+
+def init_world(M):
+    global NodosVisita, A, matrix_size
+    if NodosVisita is not None:
+        return  
+
+    if M < 2:
+        M = 2  # mínimo razonable
+
+    matrix_size = M
+    #spacing = world_size / (matrix_size - 1)
+    node_spacing = 20.0  # unidades entre nodos
+    world_size = node_spacing * (matrix_size - 1) if matrix_size > 1 else 0
+    spacing = node_spacing
+
+    nodos = []
+    for i in range(matrix_size):
+        for j in range(matrix_size):
+            x = j * spacing
+            z = i * spacing
+            nodos.append([x, 0, z])
+    NodosVisita = numpy.asarray(nodos, dtype=numpy.float64)
+    A = generar_matriz_adyacencia(matrix_size, matrix_size)
+
+def planGen(N, A):
+    match N:
+        case 1:
+            # Un solo agente: zigzag 
+            return [[0, 1, 2, 3, 4, 9, 8, 7, 6, 5, 10, 11, 12, 13, 14, 19, 18, 17, 16, 15, 20, 21, 22, 23, 24, 0]]
+        case 2:
+            # Dos agentes
+            return [
+                [0, 1, 2, 3, 4, 9, 14, 19, 24, 23, 18, 13, 8, 7, 12, 0],  # Ruta 1
+                [5, 10, 15, 20, 21, 22, 17, 16, 11, 6, 0]  # Ruta 2
+            ]
+        case 3:
+            # Tres agentes
+            return [
+                [0, 1, 2, 3, 4, 9, 14, 19, 24, 23, 18, 13, 8, 0],  # Ruta 1
+                [5, 10, 15, 20, 21, 22, 17, 12, 7, 0],  # Ruta 2
+                [0, 5, 6, 11, 16, 0]  # Ruta 3
+            ]
+        case _:
+            # Para más de 3 agentes, usar rutas básicas
+            basic_routes = []
+            for i in range(N):
+                basic_routes.append([0, 1, 2, 3, 0])
+            return basic_routes
+
+def get_random_neighbor(current_node, A):
+    """Obtiene un vecino aleatorio del nodo actual usando la matriz de adyacencia"""
+    neighbors = []
+    for i in range(len(A)):
+        if A[current_node][i] == 1:
+            neighbors.append(i)
+    
+    if neighbors:
+        return random.choice(neighbors)
+    else:
+        return current_node  # Si no tiene vecinos, se queda en el mismo nodo
+    
+def ensure_data_directory():
+    """Crea la carpeta datos si no existe"""
+    if not os.path.exists('datos'):
+        os.makedirs('datos')
+
+def create_timestamp_filename(agent_id, method):
+    """Crea el nombre del archivo con timestamp"""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"datos/{timestamp}_agent{agent_id}_{method}.csv"
+
+class Lifter:
+    def __init__(self, dim, vel, textures, idx, position, currentNode, method="planned"):
+        self.dim = dim
+        self.idx = idx
+        self.Position = position
+        self.Direction = numpy.zeros(3)
+        self.angle = 0
+        self.vel = vel
+        self.method = method  # "planned" o "random"
+        
+        # Inicializar las rutas PRIMERO según el método
+        if self.method == "planned":
+            self.original_route = planGen(idx + 1, A)[idx]
+            self.route = self.original_route.copy()
+            self.route_index = 0
+        else:
+            self.original_route = []
+            self.route = []
+            self.route_index = 0
+        
+        self.currentNode = currentNode
+        self.nextNode = self.get_initial_next_node()
+        
+        # Arreglo de texturas
+        self.textures = textures
+
+        self.platformHeight = -1.5
+        self.platformUp = False
+        self.platformDown = False
+
+        self.radiusCol = 5
+
+        self.status = "searching"
+        self.trashID = -1
+
+        self.lastPickupNode = None
+        self.returningToPickup = False
+        self.finishedRoute = False
+        self.finalNodeWithTrash = False
+        self.workCompleted = False
+        self.movements = 0 
+        
+        # Para método aleatorio: llevar cuenta de nodos visitados
+        self.visited_nodes = set([currentNode])
+        self.consecutive_repeats = 0
+        self.max_consecutive_repeats = 3
+
+        ensure_data_directory()  # Asegurar que la carpeta existe
+        self.csv_file = create_timestamp_filename(idx, method)
+        self.last_logged_state = None
+        self.last_logged_node = None
+        
+        # Crear archivo CSV con headers
+        self.init_csv()
+        
+    def init_csv(self):
+        """Inicializa el archivo CSV con los headers"""
+        with open(self.csv_file, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                'timestamp', 'agent_id', 'method', 'state', 
+                'pos_x', 'pos_y', 'pos_z', 
+                'current_node', 'next_node', 'route'
+            ])
+    
+    def log_to_csv(self, state_changed=False, node_changed=False):
+        """Guarda datos en CSV solo cuando hay cambios significativos"""
+        current_time = datetime.now().strftime("%H:%M:%S.%f")[:-3]  
+        
+        # Determinar si debemos guardar basado en cambios
+        should_log = (
+            state_changed or 
+            node_changed or 
+            self.last_logged_state is None or
+            self.last_logged_node is None
+        )
+        
+        if should_log:
+            with open(self.csv_file, 'a', newline='') as file:
+                writer = csv.writer(file)
+                route_str = str(self.route) if self.method == "planned" else "random"
+                
+                writer.writerow([
+                    current_time,
+                    self.idx,
+                    self.method,
+                    self.status,
+                    round(self.Position[0], 2),
+                    round(self.Position[1], 2),
+                    round(self.Position[2], 2),
+                    self.currentNode,
+                    self.nextNode,
+                    route_str
+                ])
+            
+            self.last_logged_state = self.status
+            self.last_logged_node = self.currentNode
+
+    def get_initial_next_node(self):
+        """Obtiene el siguiente nodo inicial según el método"""
+        if self.method == "planned":
+            if len(self.original_route) > 1:
+                return self.original_route[1]
+            else:
+                return self.currentNode
+        else:
+            return get_random_neighbor(self.currentNode, A)
+
+    def search(self):
+        u = numpy.random.rand(3)
+        u[1] = 0
+        u /= numpy.linalg.norm(u)
+        self.Direction = u
+
+    def targetCenter(self):
+        # Set direction to center
+        dirX = -self.Position[0]
+        dirZ = -self.Position[2]
+        magnitude = math.sqrt(dirX**2 + dirZ**2)
+        self.Direction = [(dirX / magnitude), 0, (dirZ / magnitude)]
+
+    def ComputeDirection(self, Posicion, NodoSiguiente):
+        Direccion = NodosVisita[NodoSiguiente,:] - Posicion
+        Direccion = numpy.asarray(Direccion)
+        Distancia = numpy.linalg.norm(Direccion)
+        Direccion /= Distancia
+        return Direccion, Distancia
+
+    def isFinalNode(self, node):
+        """Verifica si es un nodo final importante de la ruta"""
+        final_nodes = [24, 4, 9, 14, 19]
+        return node in final_nodes
+
+    def RetrieveNextNodePath(self, NodoActual):
+        """Obtiene el siguiente nodo según el método de navegación"""
+        
+        if self.workCompleted:
+            return self.currentNode
+        
+        if self.method == "planned":
+            return self._get_next_planned_node(NodoActual)
+        else:
+            return self._get_next_random_node(NodoActual)
+
+    def _get_next_planned_node(self, NodoActual):
+        """Lógica para método planeado"""
+        self.route_index += 1
+        
+        if self.route_index >= len(self.route):
+            if not self.finishedRoute:
+                self.finishedRoute = True
+                print(f"El agente {self.idx} completó su ruta planeada.")
+                
+                if self.finalNodeWithTrash:
+                    print(f"El agente {self.idx} encontró basura en el nodo final, realizando verificación final.")
+                    final_node = self.route[-2] if self.route[-1] == 0 else self.route[-1]
+                    self.route = [0, final_node, 0]
+                    self.route_index = 0
+                    self.finalNodeWithTrash = False
+                    return self.route[0]
+                else:
+                    print(f"El agente {self.idx} terminó su trabajo - regresando al nodo 0")
+                    self.workCompleted = True
+                    return 0
+            
+            else:
+                print(f"El agente {self.idx} terminó todo el trabajo")
+                self.workCompleted = True
+                return 0
+            
+        next_node = self.route[self.route_index]
+        return next_node
+
+    def _get_next_random_node(self, NodoActual):
+        """Lógica para método aleatorio"""
+        if self.returningToPickup:
+            print(f"El agente {self.idx} regresó al nodo de recolección {self.lastPickupNode}.")
+            self.returningToPickup = False
+            self.lastPickupNode = None
+            # Continuar exploración aleatoria
+            return get_random_neighbor(NodoActual, A)
+        
+        # Elegir un vecino aleatorio
+        next_node = get_random_neighbor(NodoActual, A)
+        
+        # Evitar repetir el mismo nodo muchas veces consecutivas
+        if next_node == self.currentNode:
+            self.consecutive_repeats += 1
+            if self.consecutive_repeats >= self.max_consecutive_repeats:
+                # Forzar cambio a un nodo diferente
+                neighbors = []
+                for i in range(len(A)):
+                    if A[NodoActual][i] == 1 and i != NodoActual:
+                        neighbors.append(i)
+                if neighbors:
+                    next_node = random.choice(neighbors)
+                    self.consecutive_repeats = 0
+        else:
+            self.consecutive_repeats = 0
+        
+        # Registrar nodo visitado
+        self.visited_nodes.add(next_node)
+        
+        # Ocasionalmente volver al nodo 0 para "reiniciar" la exploración
+        if random.random() < 0.05 and NodoActual != 0:  
+            print(f"El agente {self.idx} regresó aleatoriamente al nodo 0")
+            return 0
+            
+        return next_node
+
+    def update(self, delta):
+        # Guardar estado y nodo anteriores para detectar cambios
+        previous_state = self.status
+        previous_node = self.currentNode
+        
+        if self.workCompleted:
+            if random.random() < 0.01:
+                print(f"El agente {self.idx} - Trabajo completado. Esperando en el nodo 0.")
+            return
+        
+        Direccion, Distancia = self.ComputeDirection(self.Position, self.nextNode)
+        
+        if Distancia < 2:
+            print(f"El agente {self.idx} está calculando un nuevo nodo...")
+            self.currentNode = self.nextNode
+            self.movements += 1
+
+            if self.returningToPickup:
+                print(f"El agente {self.idx} regresó al nodo de recolección {self.lastPickupNode}.")
+                self.returningToPickup = False
+                self.lastPickupNode = None
+                self.nextNode = self.RetrieveNextNodePath(self.currentNode)
+            else:
+                self.nextNode = self.RetrieveNextNodePath(self.currentNode)
+
+        mssg = "Agent:%d \t Method:%s \t State:%s \t Position:[%0.2f,0,%0.2f] \t NodoActual:%d \t NodoSiguiente:%d" % (
+            self.idx, self.method, self.status, self.Position[0], self.Position[-1], self.currentNode, self.nextNode
+        )
+        if self.method == "planned":
+            mssg += f" \t Route:{self.route}"
+        print(mssg)
+
+        match self.status:
+            case "searching":
+                self.Position += Direccion * self.vel
+                self.Direction = Direccion
+                self.angle = math.acos(self.Direction[0]) * 180 / math.pi
+                if self.Direction[2] > 0:
+                    self.angle = 360 - self.angle
+
+                if self.platformUp:
+                    if self.platformHeight >= 0:
+                        self.platformUp = False
+                    else:
+                        self.platformHeight += delta
+                elif self.platformDown:
+                    if self.platformHeight <= -1.5:
+                        self.platformUp = True
+                    else:
+                        self.platformHeight -= delta
+            case "lifting":
+                if self.platformHeight >= 0:
+                    self.targetCenter()
+                    self.status = "delivering"
+                else:
+                    self.platformHeight += delta
+            case "delivering":
+                if (self.Position[0] <= 10 and self.Position[0] >= -10) and (self.Position[2] <= 10 and self.Position[2] >= -10):
+                    self.status = "dropping"
+                else:
+                    newX = self.Position[0] + self.Direction[0] * self.vel
+                    newZ = self.Position[2] + self.Direction[2] * self.vel
+                    if newX - 10 < -self.dim or newX + 10 > self.dim:
+                        self.Direction[0] *= -1
+                    else:
+                        self.Position[0] = newX
+                    if newZ - 10 < -self.dim or newZ + 10 > self.dim:
+                        self.Direction[2] *= -1
+                    else:
+                        self.Position[2] = newZ
+                    self.angle = math.acos(self.Direction[0]) * 180 / math.pi
+                    if self.Direction[2] > 0:
+                        self.angle = 360 - self.angle
+            case "dropping":
+                if self.platformHeight <= -1.5:
+                    if self.lastPickupNode is not None:
+                        if self.isFinalNode(self.lastPickupNode):
+                            self.finalNodeWithTrash = True
+                            print(f"El agente {self.idx} encontró basura en el nodo final {self.lastPickupNode}")
+                        
+                        self.nextNode = self.lastPickupNode
+                        self.returningToPickup = True
+                        print(f"El agente {self.idx} regresó al nodo {self.lastPickupNode} para buscar más basura")
+                    self.status = "searching"
+                else:
+                    self.platformHeight -= delta
+
+            case "returning":
+                if (self.Position[0] <= 20 and self.Position[0] >= -20) and (self.Position[2] <= 20 and self.Position[2] >= -20):
+                    self.Position[0] -= (self.Direction[0] * (self.vel/4))
+                    self.Position[2] -= (self.Direction[2] * (self.vel/4))
+                else:
+                    self.search()
+                    self.status = "searching"
+
+        state_changed = (previous_state != self.status)
+        node_changed = (previous_node != self.currentNode)
+        
+        # Loggear solo si hay cambios
+        self.log_to_csv(state_changed, node_changed)
+
+    def draw(self):
+        glPushMatrix()
+        glTranslatef(self.Position[0], self.Position[1], self.Position[2])
+        glRotatef(self.angle, 0, 1, 0)
+        glScaled(5, 5, 5)
+        glColor3f(1.0, 0.7, 0.9)
+        # front face
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, self.textures[2])
+        glBegin(GL_QUADS)
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(1, 1, 1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(1, 1, -1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(1, -1, -1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(1, -1, 1)
+
+        # 2nd face
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(-2, 1, 1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(1, 1, 1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(1, -1, 1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(-2, -1, 1)
+
+        # 3rd face
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(-2, 1, -1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(-2, 1, 1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(-2, -1, 1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(-2, -1, -1)
+
+        # 4th face
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(1, 1, -1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(-2, 1, -1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(-2, -1, -1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(1, -1, -1)
+
+        # top
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(1, 1, 1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(-2, 1, 1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(-2, 1, -1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(1, 1, -1)
+        glEnd()
+
+        # Head
+        glPushMatrix()
+        glTranslatef(0, 1.5, 0)
+        glScaled(0.8, 0.8, 0.8)
+        glColor3f(1.0, 0.7, 0.9)
+        head = Cubo(self.textures, 0)
+        head.draw()
+        glPopMatrix()
+        glDisable(GL_TEXTURE_2D)
+
+        # Wheels 
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, self.textures[1])
+        glPushMatrix()
+        glTranslatef(-1.2, -1, 1)
+        glScaled(0.3, 0.3, 0.3)
+        glColor3f(1.0, 0.7, 0.9)
+        wheel = Cubo(self.textures, 0)
+        wheel.draw()
+        glPopMatrix()
+
+        glPushMatrix()
+        glTranslatef(0.5, -1, 1)
+        glScaled(0.3, 0.3, 0.3)
+        wheel = Cubo(self.textures, 0)
+        wheel.draw()
+        glPopMatrix()
+
+        glPushMatrix()
+        glTranslatef(0.5, -1, -1)
+        glScaled(0.3, 0.3, 0.3)
+        wheel = Cubo(self.textures, 0)
+        wheel.draw()
+        glPopMatrix()
+
+        glPushMatrix()
+        glTranslatef(-1.2, -1, -1)
+        glScaled(0.3, 0.3, 0.3)
+        wheel = Cubo(self.textures, 0)
+        wheel.draw()
+        glPopMatrix()
+        glDisable(GL_TEXTURE_2D)
+
+        # Lifter
+        glPushMatrix()
+        if self.status in ["lifting","delivering","dropping"]:
+            self.drawTrash()
+        glColor3f(0.0, 0.0, 0.0)
+        glTranslatef(0, self.platformHeight, 0)  # Up and down
+        glBegin(GL_QUADS)
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(1, 1, 1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(1, 1, -1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(3, 1, -1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(3, 1, 1)
+        glEnd()
+        glPopMatrix()
+        glPopMatrix()
+
+    def drawTrash(self):
+        glPushMatrix()
+        glTranslatef(2, (self.platformHeight + 1.5), 0)
+        glScaled(0.5, 0.5, 0.5)
+        glColor3f(1.0, 1.0, 1.0)
+
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, self.textures[3])
+
+        glBegin(GL_QUADS)
+        # Front face
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(1, 1, 1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(-1, 1, 1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(-1, -1, 1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(1, -1, 1)
+
+        # Back face
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(-1, 1, -1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(1, 1, -1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(1, -1, -1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(-1, -1, -1)
+
+        # Left face
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(-1, 1, 1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(-1, 1, -1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(-1, -1, -1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(-1, -1, 1)
+
+        # Right face
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(1, 1, -1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(1, 1, 1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(1, -1, 1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(1, -1, -1)
+
+        # Top face
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(-1, 1, 1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(1, 1, 1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(1, 1, -1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(-1, 1, -1)
+
+        # Bottom face
+        glTexCoord2f(0.0, 0.0)
+        glVertex3d(-1, -1, 1)
+        glTexCoord2f(1.0, 0.0)
+        glVertex3d(1, -1, 1)
+        glTexCoord2f(1.0, 1.0)
+        glVertex3d(1, -1, -1)
+        glTexCoord2f(0.0, 1.0)
+        glVertex3d(-1, -1, -1)
+        glEnd()
+        glDisable(GL_TEXTURE_2D)
+
+        glPopMatrix()

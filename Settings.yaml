@@ -1,0 +1,28 @@
+# conversion de archivo a una clase
+Materials: ./Materials/
+screen_width: 500
+screen_height: 500
+#vc para el obser.
+FOVY: 60.0
+ZNEAR: 0.01
+ZFAR: 1800.0
+#Variables para definir la posicion del observador
+#gluLookAt(EYE_X,EYE_Y,EYE_Z,CENTER_X,CENTER_Y,CENTER_Z,UP_X,UP_Y,UP_Z)
+EYE_X: 200.0
+EYE_Y: 150.0
+EYE_Z: 200.0
+CENTER_X: 0
+CENTER_Y: 0
+CENTER_Z: 0
+UP_X: 0
+UP_Y: 1
+UP_Z: 0
+#Variables para dibujar los ejes del sistema
+X_MIN: -500
+X_MAX: 500
+Y_MIN: -500
+Y_MAX: 500
+Z_MIN: -500
+Z_MAX: 500
+#Dimension del plano
+DimBoard: 200
