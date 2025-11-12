@@ -1,0 +1,17 @@
+timestamp,agent_id,method,state,pos_x,pos_y,pos_z,current_node,next_node,route
+18:18:18.495,1,random,searching,-2.17,0.0,-0.67,44848,45147,random
+18:18:18.570,1,random,searching,-3.16,0.0,0.46,45147,45146,random
+18:18:18.604,1,random,searching,-4.64,0.0,0.66,45146,44845,random
+18:18:18.638,1,random,searching,-5.72,0.0,-0.38,44845,45145,random
+18:18:18.662,1,random,searching,-6.13,0.0,1.06,45145,45446,random
+18:18:18.705,1,random,searching,-4.87,0.0,1.88,45446,45145,random
+18:18:18.740,1,random,searching,-5.9,0.0,0.79,45145,44845,random
+18:18:18.774,1,random,searching,-6.02,0.0,-0.7,44845,44545,random
+18:18:18.807,1,random,searching,-6.02,0.0,-2.2,44545,44244,random
+18:18:18.842,1,random,searching,-7.16,0.0,-3.18,44244,44543,random
+18:18:18.874,1,random,searching,-8.35,0.0,-2.27,44543,44243,random
+18:18:18.909,1,random,searching,-8.81,0.0,-3.7,44243,44242,random
+18:18:18.943,1,random,searching,-10.25,0.0,-3.28,44242,43942,random
+18:18:18.977,1,random,searching,-10.02,0.0,-4.76,43942,43943,random
+18:18:19.011,1,random,searching,-8.52,0.0,-4.67,43943,44242,random
+18:18:19.079,1,random,searching,-10.78,0.0,-2.69,44242,0,random

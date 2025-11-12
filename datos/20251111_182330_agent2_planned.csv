@@ -1,0 +1,5 @@
+timestamp,agent_id,method,state,pos_x,pos_y,pos_z,current_node,next_node,route
+18:23:30.362,2,planned,searching,0.0,0.0,0.0,12,5,"[0, 5, 6, 11, 16, 0]"
+18:23:33.568,2,planned,searching,-99.7,0.0,-99.7,6,11,"[0, 5, 6, 11, 16, 0]"
+18:23:35.844,2,planned,searching,-100.0,0.0,0.8,11,16,"[0, 5, 6, 11, 16, 0]"
+18:23:38.360,2,planned,searching,-99.91,0.0,99.52,16,0,"[0, 5, 6, 11, 16, 0]"

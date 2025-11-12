@@ -1,0 +1,13 @@
+timestamp,agent_id,method,state,pos_x,pos_y,pos_z,current_node,next_node,route
+18:18:06.472,0,random,searching,1.06,0.0,1.06,12,18,random
+18:18:07.003,0,random,delivering,1.06,0.0,1.06,12,18,random
+18:18:07.037,0,random,dropping,1.06,0.0,1.06,12,18,random
+18:18:07.580,0,random,searching,1.06,0.0,1.06,12,12,random
+18:18:08.124,0,random,delivering,1.06,0.0,1.06,12,7,random
+18:18:08.159,0,random,dropping,1.06,0.0,1.06,12,7,random
+18:18:08.702,0,random,searching,1.06,0.0,1.06,12,7,random
+18:18:09.247,0,random,delivering,1.06,0.0,1.06,12,7,random
+18:18:09.281,0,random,dropping,1.06,0.0,1.06,12,7,random
+18:18:09.923,0,random,searching,1.06,0.0,1.06,12,12,random
+18:18:10.464,0,random,delivering,1.06,0.0,1.06,12,13,random
+18:18:10.498,0,random,dropping,1.06,0.0,1.06,12,13,random

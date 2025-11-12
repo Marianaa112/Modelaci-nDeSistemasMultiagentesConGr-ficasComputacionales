@@ -71,14 +71,32 @@ def Texturas(filepath):
 def Init(Options):
     global textures, basuras, lifters, start_time, initial_trash_count
 
-    # Determinar tamaño de la matriz
-    if Options.method == "random":
-        M = Options.M
+    # Procesar métodos individuales si se especificaron
+    methods_list = []
+    if Options.methods:
+        # Parsear métodos individuales separados por comas
+        methods_list = [m.strip().lower() for m in Options.methods.split(',')]
+        # Validar que todos sean válidos
+        for m in methods_list:
+            if m not in ["planned", "random"]:
+                raise ValueError(f"Método inválido: {m}. Debe ser 'planned' o 'random'")
+        # Validar que haya tantos métodos como lifters
+        if len(methods_list) != Options.lifters:
+            raise ValueError(f"Debe haber {Options.lifters} métodos (uno por cada lifter), pero se proporcionaron {len(methods_list)}")
     else:
-        M = 5  # Hardcoded para planned
+        # Usar el mismo método para todos
+        methods_list = [Options.method] * Options.lifters
 
-    Lifter.init_world(M)
-    total_nodes = M * M
+    # Determinar tamaño de la matriz para los nodos de los lifters
+    # Para planned siempre usa 5x5, para random usa Options.M
+    has_random = any(m == "random" for m in methods_list) if Options.methods else (Options.method == "random")
+    M_lifters = Options.M if has_random else 5
+    
+    # M para basuras: siempre usa Options.M para definir el área donde aparecen
+    M_basuras = Options.M
+
+    Lifter.init_world(M_lifters)
+    total_nodes = M_lifters * M_lifters
 
     screen = pygame.display.set_mode((Settings.screen_width, Settings.screen_height), DOUBLEBUF | OPENGL)
     pygame.display.set_caption("OpenGL: cubos")
@@ -107,22 +125,53 @@ def Init(Options):
     for File in glob.glob(Settings.Materials + "*.*"):
         Texturas(File)
 
-    # Generar posiciones de basura
+    # Generar posiciones de basura dentro del área definida por M_basuras
+    # El área de basuras se calcula basándose en M_basuras
+    # Si M_basuras es pequeño, las basuras aparecen en un área pequeña
+    # Si M_basuras es grande, las basuras aparecen en un área grande
+    DimBoard = Settings.DimBoard
+    # Calcular el área donde pueden aparecer las basuras basado en M_basuras
+    # Similar a como se calculan los nodos, pero para el área de basuras
+    if M_basuras > 1:
+        basura_spacing = (2 * DimBoard) / (M_basuras - 1)
+        basura_area_size = basura_spacing * (M_basuras - 1)
+    else:
+        basura_area_size = 2 * DimBoard
+    
+    # El área de basuras va desde -basura_area_size/2 hasta +basura_area_size/2
+    # Centrado en el origen
+    basura_min = -basura_area_size / 2
+    basura_max = basura_area_size / 2
+    
     NodosCarga = []
     for i in range(Options.Basuras):
-        if total_nodes <= 1:
-            nodo_aleatorio = 0
-        else:
-            nodo_aleatorio = random.randint(1, total_nodes - 1)
-        x = Lifter.NodosVisita[nodo_aleatorio][0]
-        z = Lifter.NodosVisita[nodo_aleatorio][2]
+        # Generar posición aleatoria dentro del área definida por M_basuras
+        x = random.uniform(basura_min, basura_max)
+        z = random.uniform(basura_min, basura_max)
         NodosCarga.append([x, 0, z])
+    
+    print(f"Área de basuras: de {basura_min:.2f} a {basura_max:.2f} (basado en M={M_basuras})")
 
-    # Crear lifters
+    # Crear lifters con sus métodos individuales
+    # Inicializar lifters en el CENTRO (0, 0, 0)
+    # Calcular qué nodo está más cerca del centro
+    center_pos = numpy.array([0.0, 0.0, 0.0])
     CurrentNode = 0
+    if len(Lifter.NodosVisita) > 0:
+        # Encontrar el nodo más cercano al centro
+        distances = numpy.linalg.norm(Lifter.NodosVisita - center_pos, axis=1)
+        CurrentNode = numpy.argmin(distances)
+        center_pos = Lifter.NodosVisita[CurrentNode].copy()
+        print(f"Nodo central encontrado: {CurrentNode} en posición {center_pos}")
+    
     Positions = numpy.zeros((Options.lifters, 3))
     for i, p in enumerate(Positions):
-        lifters.append(Lifter.Lifter(Settings.DimBoard, 0.7, textures, i, p, CurrentNode, Options.method))
+        # Todos empiezan en el centro (0,0,0) o el nodo más cercano al centro
+        Positions[i] = center_pos.copy()
+        method_for_lifter = methods_list[i]
+        # Aumentar velocidad de los lifters (de 0.7 a 1.5 para hacerlo más rápido)
+        lifters.append(Lifter.Lifter(Settings.DimBoard, 1.5, textures, i, Positions[i], CurrentNode, method_for_lifter))
+        print(f"Lifter {i} inicializado con método: {method_for_lifter} en posición {Positions[i]} (nodo {CurrentNode})")
 
     # Crear basuras
     for i, n in enumerate(NodosCarga):
@@ -158,9 +207,12 @@ def display():
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-    for obj in lifters:
+    # Actualizar lifters pasando la lista de otros lifters para evitar colisiones
+    for i, obj in enumerate(lifters):
+        # Crear lista de otros lifters (excluyendo el actual)
+        other_lifters = [lifter for j, lifter in enumerate(lifters) if j != i]
+        obj.update(delta, other_lifters)
         obj.draw()
-        obj.update(delta)
 
     # Contar basura viva
     alive_trash = sum(1 for b in basuras if b.alive)
@@ -301,12 +353,21 @@ def Simulacion(Options):
     real_duration = work_completed_time if all_work_done else (time.time() - simulation_start_time)
 
     if Options.resumen == "s":
+        # Contar métodos usados
+        planned_count = sum(1 for lifter in lifters if lifter.method == "planned")
+        random_count = sum(1 for lifter in lifters if lifter.method == "random")
+        
         print("\n" + "="*60)
         print("RESUMEN DE LA SIMULACIÓN")
         print("="*60)
-        print(f"{'Tipo de experimento:':<25} {Options.method}")
+        if Options.methods:
+            print(f"{'Métodos usados:':<25} Mixto (--methods especificado)")
+            print(f"{'  - Planeados:':<25} {planned_count}")
+            print(f"{'  - Aleatorios:':<25} {random_count}")
+        else:
+            print(f"{'Tipo de experimento:':<25} {Options.method}")
         print(f"{'Tmax (límite):':<25} {Options.Tmax:.1f} s")
-        M_used = 5 if Options.method == "planned" else Options.M
+        M_used = Lifter.matrix_size if Lifter.matrix_size else (5 if Options.method == "planned" else Options.M)
         print(f"{'M (tamaño matriz):':<25} {M_used}")
         print(f"{'N (número de agentes):':<25} {Options.lifters}")
         print(f"{'Celdas inicialmente sucias:':<25} {initial_dirty_pct:.1f}% ({initial_trash_count}/{total_nodes})")
