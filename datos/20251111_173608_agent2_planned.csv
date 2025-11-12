@@ -1,0 +1,7 @@
+timestamp,agent_id,method,state,pos_x,pos_y,pos_z,current_node,next_node,route
+17:36:08.440,2,planned,searching,1.5,0.0,0.0,0,5,"[0, 5, 6, 11, 16, 0]"
+17:36:10.692,2,planned,searching,100.42,0.0,0.02,5,5,"[0, 5, 6, 11, 16, 0]"
+17:36:11.202,2,planned,searching,119.92,0.0,-0.0,6,11,"[0, 5, 6, 11, 16, 0]"
+17:36:18.913,2,planned,searching,-0.05,0.0,19.14,11,16,"[0, 5, 6, 11, 16, 0]"
+17:36:22.617,2,planned,searching,100.9,0.0,20.1,16,0,"[0, 5, 6, 11, 16, 0]"
+17:36:25.642,2,planned,searching,0.23,0.0,-0.15,0,0,"[0, 5, 6, 11, 16, 0]"

@@ -1,0 +1,6 @@
+timestamp,agent_id,method,state,pos_x,pos_y,pos_z,current_node,next_node,route
+17:34:08.202,9,random,searching,0.0,0.0,1.5,0,13,random
+17:34:08.627,9,random,searching,0.0,0.0,21.0,13,1,random
+17:34:09.340,9,random,searching,18.7,0.0,-1.36,1,2,random
+17:34:10.134,9,random,searching,40.88,0.0,0.18,2,14,random
+17:34:11.324,9,random,delivering,43.43,0.0,17.35,2,14,random
