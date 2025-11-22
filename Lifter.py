@@ -38,16 +38,21 @@ def init_world(M):
         M = 2  # mínimo razonable
 
     matrix_size = M
-    #spacing = world_size / (matrix_size - 1)
     node_spacing = 20.0  # unidades entre nodos
-    world_size = node_spacing * (matrix_size - 1) if matrix_size > 1 else 0
     spacing = node_spacing
+
+    # Calcular el offset para centrar la matriz en el origen (0, 0, 0)
+    # El nodo central de la matriz (no el nodo 0) estará en (0, 0, 0)
+    # Esto distribuye la matriz alrededor del centro del mapa
+    center_offset = -(matrix_size - 1) / 2.0 * spacing
 
     nodos = []
     for i in range(matrix_size):
         for j in range(matrix_size):
-            x = j * spacing
-            z = i * spacing
+            # Centrar la matriz: el nodo central estará en (0, 0, 0)
+            # Para M=5: nodos van de -40 a +40, con el centro en 0
+            x = j * spacing + center_offset
+            z = i * spacing + center_offset
             nodos.append([x, 0, z])
     NodosVisita = numpy.asarray(nodos, dtype=numpy.float64)
     A = generar_matriz_adyacencia(matrix_size, matrix_size)
