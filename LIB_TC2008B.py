@@ -119,10 +119,41 @@ def Init(Options):
         NodosCarga.append([x, 0, z])
 
     # Crear lifters
-    CurrentNode = 0
+    # Para método random, distribuir los lifters en diferentes nodos iniciales
+    if Options.method == "random":
+        # Distribuir los lifters en diferentes nodos para evitar que todos empiecen en el mismo punto
+        total_nodes = M * M
+        initial_nodes = []
+        for i in range(Options.lifters):
+            # Distribuir de manera más uniforme
+            if i == 0:
+                initial_nodes.append(0)  # El primero siempre en el nodo 0
+            else:
+                # Los demás en nodos distribuidos
+                node_offset = (i * (total_nodes - 1)) // Options.lifters
+                initial_nodes.append(min(node_offset, total_nodes - 1))
+    else:
+        # Para planned, todos empiezan en el nodo 0
+        initial_nodes = [0] * Options.lifters
+    
     Positions = numpy.zeros((Options.lifters, 3))
     for i, p in enumerate(Positions):
-        lifters.append(Lifter.Lifter(Settings.DimBoard, 0.7, textures, i, p, CurrentNode, Options.method))
+        currentNode = initial_nodes[i]
+        # Establecer la posición inicial en el nodo correspondiente
+        if currentNode < len(Lifter.NodosVisita):
+            p[0] = Lifter.NodosVisita[currentNode][0]
+            p[1] = Lifter.NodosVisita[currentNode][1]
+            p[2] = Lifter.NodosVisita[currentNode][2]
+            # Si es random y hay múltiples lifters en el mismo nodo, agregar pequeño offset
+            if Options.method == "random":
+                # Contar cuántos lifters anteriores están en el mismo nodo
+                same_node_count = sum(1 for j in range(i) if initial_nodes[j] == currentNode)
+                if same_node_count > 0:
+                    # Pequeño offset para evitar superposición exacta
+                    angle_offset = (same_node_count * 2 * math.pi) / 8  # Distribuir en círculo
+                    p[0] += math.cos(angle_offset) * 1.5
+                    p[2] += math.sin(angle_offset) * 1.5
+        lifters.append(Lifter.Lifter(Settings.DimBoard, 0.7, textures, i, p, currentNode, Options.method))
 
     # Crear basuras
     for i, n in enumerate(NodosCarga):
@@ -144,6 +175,7 @@ def planoText():
     glEnd()
 
 def checkCollisions():
+    # Detectar colisiones entre lifters y basura
     for c in lifters:
         for b in basuras:
             distance = math.sqrt((b.Position[0] - c.Position[0])**2 + (b.Position[2] - c.Position[2])**2)
@@ -152,6 +184,46 @@ def checkCollisions():
                     b.alive = False
                     c.status = "lifting"
                     c.lastPickupNode = c.currentNode
+    
+    # Detectar colisiones entre lifters (solo para random, excepto en área de tirar basura)
+    for i, lifter1 in enumerate(lifters):
+        for j, lifter2 in enumerate(lifters):
+            if i >= j:  # Evitar comparar dos veces el mismo par
+                continue
+            
+            distance = math.sqrt((lifter2.Position[0] - lifter1.Position[0])**2 + 
+                               (lifter2.Position[2] - lifter1.Position[2])**2)
+            
+            # Radio de detección para evitar colisiones (ajustado para balance entre distancia y fluidez)
+            detection_radius = lifter1.radiusCol * 2.5  # Radio moderado para mantener distancia sin ser excesivo
+            
+            # Solo evitar colisiones si al menos uno es random y están fuera del área de tirar basura
+            if distance <= detection_radius:
+                in_trash_area1 = lifter1.isInTrashArea()
+                in_trash_area2 = lifter2.isInTrashArea()
+                
+                # Si ambos están en el área de tirar basura, permitir colisiones/amontonamiento
+                if in_trash_area1 and in_trash_area2:
+                    continue
+                
+                # Si ambos son random y al menos uno está fuera del área de tirar basura
+                if lifter1.method == "random" and lifter2.method == "random":
+                    if not in_trash_area1 and not in_trash_area2:
+                        # Ambos están fuera, ambos deben evitar
+                        lifter1.nearby_lifter_detected = True
+                        lifter2.nearby_lifter_detected = True
+                    elif not in_trash_area1:
+                        # Solo lifter1 está fuera, solo él evita
+                        lifter1.nearby_lifter_detected = True
+                    elif not in_trash_area2:
+                        # Solo lifter2 está fuera, solo él evita
+                        lifter2.nearby_lifter_detected = True
+                elif lifter1.method == "random" and not in_trash_area1:
+                    # Lifter1 es random y está fuera, debe evitar
+                    lifter1.nearby_lifter_detected = True
+                elif lifter2.method == "random" and not in_trash_area2:
+                    # Lifter2 es random y está fuera, debe evitar
+                    lifter2.nearby_lifter_detected = True
 
 def display():
     global lifters, basuras, delta, work_completed_time, all_work_done, final_trash_count, Options_global
