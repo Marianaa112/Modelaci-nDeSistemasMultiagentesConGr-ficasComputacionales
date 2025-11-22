@@ -145,6 +145,13 @@ class Lifter:
         self.visited_nodes = set([currentNode])
         self.consecutive_repeats = 0
         self.max_consecutive_repeats = 3
+        
+        # Para detección de colisiones con otros lifters
+        self.nearby_lifter_detected = False
+        self.avoidance_cooldown = 0  # Tiempo de espera antes de poder cambiar dirección de nuevo
+        self.drop_time = 0  # Tiempo en el área de tirar basura
+        self.last_avoidance_node = None  # Último nodo al que cambió para evitar
+        self.avoidance_count = 0  # Contador de evasiones consecutivas
 
         ensure_data_directory()  # Asegurar que la carpeta existe
         self.csv_file = create_timestamp_filename(idx, method)
@@ -205,7 +212,20 @@ class Lifter:
             else:
                 return self.currentNode
         else:
-            return get_random_neighbor(self.currentNode, A)
+            # Para random, elegir un vecino aleatorio diferente
+            next_node = get_random_neighbor(self.currentNode, A)
+            # Si es el nodo 0 y hay múltiples vecinos, preferir uno diferente
+            if self.currentNode == 0:
+                neighbors = []
+                for i in range(len(A)):
+                    if A[self.currentNode][i] == 1 and i != self.currentNode:
+                        neighbors.append(i)
+                if len(neighbors) > 1:
+                    # Preferir un nodo que no sea el 0
+                    non_zero_neighbors = [n for n in neighbors if n != 0]
+                    if non_zero_neighbors:
+                        next_node = random.choice(non_zero_neighbors)
+            return next_node
 
     def search(self):
         u = numpy.random.rand(3)
@@ -231,6 +251,33 @@ class Lifter:
         """Verifica si es un nodo final importante de la ruta"""
         final_nodes = [24, 4, 9, 14, 19]
         return node in final_nodes
+    
+    def isInTrashArea(self):
+        """Verifica si el lifter está en el área de tirar basura"""
+        return (self.Position[0] <= 10 and self.Position[0] >= -10) and \
+               (self.Position[2] <= 10 and self.Position[2] >= -10)
+    
+    def avoidLifter(self, other_lifter_position):
+        """Cambia la dirección para evitar otro lifter (solo para random)"""
+        if self.method != "random" or self.isInTrashArea():
+            return False
+        
+        # Calcular dirección de escape
+        escape_dir = self.Position - other_lifter_position
+        escape_dir[1] = 0  # Mantener en el plano horizontal
+        distance = numpy.linalg.norm(escape_dir)
+        
+        if distance > 0:
+            escape_dir /= distance
+            # Cambiar a un nodo aleatorio diferente
+            neighbors = []
+            for i in range(len(A)):
+                if A[self.currentNode][i] == 1 and i != self.currentNode:
+                    neighbors.append(i)
+            if neighbors:
+                self.nextNode = random.choice(neighbors)
+                return True
+        return False
 
     def RetrieveNextNodePath(self, NodoActual):
         """Obtiene el siguiente nodo según el método de navegación"""
@@ -314,10 +361,46 @@ class Lifter:
         previous_state = self.status
         previous_node = self.currentNode
         
+        # Reducir cooldown de evasión
+        if self.avoidance_cooldown > 0:
+            self.avoidance_cooldown -= delta
+        
         if self.workCompleted:
             if random.random() < 0.01:
                 print(f"El agente {self.idx} - Trabajo completado. Esperando en el nodo 0.")
             return
+        
+        # Si detectó otro lifter cercano y es random, cambiar dirección de forma más agresiva
+        if self.nearby_lifter_detected and self.method == "random" and self.avoidance_cooldown <= 0:
+            if not self.isInTrashArea() and self.status == "searching":
+                # Cambiar a un nodo aleatorio diferente, evitando el nodo actual y el siguiente
+                neighbors = []
+                for i in range(len(A)):
+                    if A[self.currentNode][i] == 1 and i != self.currentNode:
+                        # Evitar el siguiente nodo actual y el último nodo de evasión si es muy reciente
+                        if i != self.nextNode and (i != self.last_avoidance_node or self.avoidance_count < 3):
+                            neighbors.append(i)
+                
+                if neighbors:
+                    # Preferir nodos que no hayan sido visitados recientemente (últimos 5 nodos)
+                    unvisited_neighbors = [n for n in neighbors if n not in list(self.visited_nodes)[-5:]]
+                    if unvisited_neighbors:
+                        self.nextNode = random.choice(unvisited_neighbors)
+                    else:
+                        # Si todos fueron visitados, elegir aleatoriamente
+                        self.nextNode = random.choice(neighbors)
+                    
+                    self.last_avoidance_node = self.nextNode
+                    self.avoidance_count += 1
+                    self.avoidance_cooldown = 0.15  # Cooldown más corto para respuesta más rápida
+                    print(f"El agente {self.idx} (random) detectó otro lifter, cambiando dirección al nodo {self.nextNode}")
+                else:
+                    # Si no hay vecinos disponibles, forzar cambio de dirección inmediato
+                    # Cambiar la dirección actual para alejarse
+                    self.Direction[0] *= -1
+                    self.Direction[2] *= -1
+                    self.avoidance_cooldown = 0.1
+            self.nearby_lifter_detected = False
         
         Direccion, Distancia = self.ComputeDirection(self.Position, self.nextNode)
         
@@ -325,6 +408,9 @@ class Lifter:
             print(f"El agente {self.idx} está calculando un nuevo nodo...")
             self.currentNode = self.nextNode
             self.movements += 1
+            # Resetear contador de evasiones cuando llega a un nodo
+            if self.avoidance_count > 0:
+                self.avoidance_count = 0
 
             if self.returningToPickup:
                 print(f"El agente {self.idx} regresó al nodo de recolección {self.lastPickupNode}.")
@@ -343,6 +429,17 @@ class Lifter:
 
         match self.status:
             case "searching":
+                # Verificar colisiones durante el movimiento (solo para random)
+                if self.method == "random" and self.nearby_lifter_detected and not self.isInTrashArea():
+                    # Si detecta otro lifter durante el movimiento, ajustar dirección más agresivamente
+                    if self.avoidance_cooldown <= 0:
+                        # Aplicar un ajuste más fuerte de dirección perpendicular para evitar
+                        perpendicular_dir = numpy.array([-Direccion[2], 0, Direccion[0]])
+                        # Aumentar el factor de evasión para mantener más distancia
+                        Direccion = (Direccion + perpendicular_dir * 0.6)
+                        Direccion /= numpy.linalg.norm(Direccion)
+                        self.avoidance_cooldown = 0.1
+                
                 self.Position += Direccion * self.vel
                 self.Direction = Direccion
                 self.angle = math.acos(self.Direction[0]) * 180 / math.pi
@@ -383,6 +480,9 @@ class Lifter:
                     if self.Direction[2] > 0:
                         self.angle = 360 - self.angle
             case "dropping":
+                # Si es planned, reducir tiempo de detención (bajar más rápido)
+                drop_speed = delta * 2.0 if self.method == "planned" else delta
+                
                 if self.platformHeight <= -1.5:
                     if self.lastPickupNode is not None:
                         if self.isFinalNode(self.lastPickupNode):
@@ -393,8 +493,10 @@ class Lifter:
                         self.returningToPickup = True
                         print(f"El agente {self.idx} regresó al nodo {self.lastPickupNode} para buscar más basura")
                     self.status = "searching"
+                    self.drop_time = 0
                 else:
-                    self.platformHeight -= delta
+                    self.platformHeight -= drop_speed
+                    self.drop_time += delta
 
             case "returning":
                 if (self.Position[0] <= 20 and self.Position[0] >= -20) and (self.Position[2] <= 20 and self.Position[2] >= -20):
