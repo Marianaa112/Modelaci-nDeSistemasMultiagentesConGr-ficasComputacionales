@@ -6,10 +6,24 @@ Este es el codigo para realizar la base del Reto
 
 ### Ejecución básica
 
-Para ejecutar el código:
+Para ejecutar el código puedes usar argumentos de línea de comandos o un archivo JSON:
+
+**Con argumentos de línea de comandos:**
 
 ```bash
 python Main.py Simulacion --lifters 3 --Basuras 6 --method random --Tmax 60 --M 5
+```
+
+**Con archivo JSON:**
+
+```bash
+python Main.py Simulacion --config config.json
+```
+
+**Combinando ambos (JSON + argumentos que sobrescriben):**
+
+```bash
+python Main.py Simulacion --config config.json --lifters 5 --Tmax 120
 ```
 
 ### Ejemplos de uso
@@ -32,11 +46,39 @@ python Main.py Simulacion --lifters 2 --Basuras 4 --method planned --Tmax 60
 python Main.py Simulacion --lifters 3 --Basuras 6 --method random --Delta 0.1 --Tmax 60 --M 5
 ```
 
+**Usando archivo JSON:**
+
+```bash
+python Main.py Simulacion --config config_example.json
+```
+
+### Formato del archivo JSON
+
+Puedes crear un archivo JSON con la configuración. Ejemplo (`config_example.json`):
+
+```json
+{
+  "command": "Simulacion",
+  "lifters": 3,
+  "basuras": 6,
+  "method": "random",
+  "Tmax": 60,
+  "M": 5,
+  "Delta": 0.05,
+  "theta": 0,
+  "radious": 30,
+  "resumen": "s"
+}
+```
+
+**Nota:** Los argumentos de línea de comandos tienen prioridad sobre los valores del JSON. Esto te permite usar el JSON como base y sobrescribir valores específicos cuando sea necesario.
+
 ## Parámetros configurables:
 
 ```
---lifters: número de agentes/lifters (obligatorio)
---Basuras: número de objetos de basura (obligatorio)
+--config, --json: archivo JSON con la configuración (opcional)
+--lifters: número de agentes/lifters (obligatorio si no está en JSON)
+--Basuras: número de objetos de basura (obligatorio si no está en JSON)
 --Delta: velocidad de simulación (opcional, predeterminado: 0.05)
 --theta: ángulo de rotación de cámara (opcional, predeterminado: 0)
 --radious: radio de la cámara (opcional, predeterminado: 30)
