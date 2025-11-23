@@ -1,0 +1,14 @@
+{
+  "command": "Simulacion",
+  "lifters": 3,
+  "basuras": 6,
+  "method": "random",
+  "Tmax": 60,
+  "M": 5,
+  "Delta": 0.05,
+  "theta": 0,
+  "radious": 30,
+  "resumen": "s"
+}
+
+

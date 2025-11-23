@@ -216,6 +216,12 @@ def checkCollisions():
                 elif lifter2.method == "random" and not in_trash_area2:
                     # Lifter2 es random y está fuera, debe evitar
                     lifter2.nearby_lifter_detected = True
+                
+                # Para planned: contar interferencias solo si están muy cerca (amontonamiento real)
+                if lifter1.method == "planned" and lifter2.method == "planned":
+                    if distance <= lifter1.radiusCol * 1.2:  # Muy cerca = amontonamiento real
+                        lifter1.interference_count += 1
+                        lifter2.interference_count += 1
 
 def display():
     global lifters, basuras, delta, work_completed_time, all_work_done, final_trash_count, Options_global
@@ -365,16 +371,42 @@ def Simulacion(Options):
     real_duration = work_completed_time if all_work_done else (time.time() - simulation_start_time)
 
     if Options.resumen == "s":
+        # Calcular agentes que entorpecen (con interferencias significativas)
+        # Un agente entorpece si tiene interferencias por encima de un umbral relativo
+        # Usar un umbral basado en el número de movimientos o tiempo de simulación
+        total_movements_all = sum(lifter.movements for lifter in lifters)
+        avg_movements = total_movements_all / len(lifters) if len(lifters) > 0 else 1
+        
+        # Umbral: más del 15% de los movimientos promedio fueron interferencias
+        # O al menos 5 interferencias si el agente tuvo pocos movimientos
+        interference_threshold = max(5, int(avg_movements * 0.15))
+        
+        interfering_agents = [lifter for lifter in lifters if lifter.interference_count >= interference_threshold]
+        num_interfering = len(interfering_agents)
+        
+        # Separar por método
+        planned_lifters = [lifter for lifter in lifters if lifter.method == "planned"]
+        random_lifters = [lifter for lifter in lifters if lifter.method == "random"]
+        
+        interfering_planned = [lifter for lifter in planned_lifters if lifter.interference_count >= interference_threshold]
+        interfering_random = [lifter for lifter in random_lifters if lifter.interference_count >= interference_threshold]
+        
         print("\n" + "="*60)
         print("RESUMEN DE LA SIMULACIÓN")
         print("="*60)
         print(f"{'Tipo de experimento:':<25} {Options.method}")
         print(f"{'Tmax (límite):':<25} {Options.Tmax:.1f} s")
-        M_used = 5 if Options.method == "planned" else Options.M
+        M_used = Options.M
         print(f"{'M (tamaño matriz):':<25} {M_used}")
         print(f"{'N (número de agentes):':<25} {Options.lifters}")
         print(f"{'Celdas inicialmente sucias:':<25} {initial_dirty_pct:.1f}% ({initial_trash_count}/{total_nodes})")
         print(f"{'Celdas limpias al final:':<25} {final_clean_pct:.1f}% ({total_nodes - final_trash_count}/{total_nodes})")
         print(f"{'Tiempo real de simulación:':<25} {real_duration:.2f} s")
         print(f"{'Movimientos totales:':<25} {total_movements}")
+        print(f"{'Umbral de interferencias:':<25} {interference_threshold} (≥15% movimientos promedio)")
+        print(f"{'Agentes que entorpecen (total):':<25} {num_interfering}/{Options.lifters}")
+        if len(planned_lifters) > 0:
+            print(f"{'  - Método planned:':<25} {len(interfering_planned)}/{len(planned_lifters)}")
+        if len(random_lifters) > 0:
+            print(f"{'  - Método random:':<25} {len(interfering_random)}/{len(random_lifters)}")
         print("="*60)

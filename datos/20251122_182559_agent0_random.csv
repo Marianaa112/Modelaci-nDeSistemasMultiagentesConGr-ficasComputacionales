@@ -1,0 +1,2 @@
+timestamp,agent_id,method,state,pos_x,pos_y,pos_z,current_node,next_node,route
+18:25:59.253,0,random,searching,-109.51,0.0,-109.51,0,13,random

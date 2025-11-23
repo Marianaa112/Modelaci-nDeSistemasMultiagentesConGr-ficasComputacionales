@@ -238,6 +238,7 @@ class Lifter:
         self.drop_time = 0  # Tiempo en el área de tirar basura
         self.last_avoidance_node = None  # Último nodo al que cambió para evitar
         self.avoidance_count = 0  # Contador de evasiones consecutivas
+        self.interference_count = 0  # Contador de interferencias/entorpecimientos (se incrementa en checkCollisions)
 
         ensure_data_directory()  # Asegurar que la carpeta existe
         self.csv_file = create_timestamp_filename(idx, method)
@@ -499,6 +500,8 @@ class Lifter:
                     
                     self.last_avoidance_node = self.nextNode
                     self.avoidance_count += 1
+                    # Incrementar interferencia solo cuando realmente cambia de dirección
+                    self.interference_count += 1
                     self.avoidance_cooldown = 0.15  # Cooldown más corto para respuesta más rápida
                     print(f"El agente {self.idx} (random) detectó otro lifter, cambiando dirección al nodo {self.nextNode}")
                 else:
