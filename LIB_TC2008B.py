@@ -71,11 +71,8 @@ def Texturas(filepath):
 def Init(Options):
     global textures, basuras, lifters, start_time, initial_trash_count
 
-    # Determinar tamaño de la matriz
-    if Options.method == "random":
-        M = Options.M
-    else:
-        M = 5  # Hardcoded para planned
+    # Determinar tamaño de la matriz (tanto para random como planned)
+    M = Options.M
 
     Lifter.init_world(M)
     total_nodes = M * M
@@ -119,22 +116,18 @@ def Init(Options):
         NodosCarga.append([x, 0, z])
 
     # Crear lifters
-    # Para método random, distribuir los lifters en diferentes nodos iniciales
-    if Options.method == "random":
-        # Distribuir los lifters en diferentes nodos para evitar que todos empiecen en el mismo punto
-        total_nodes = M * M
-        initial_nodes = []
-        for i in range(Options.lifters):
-            # Distribuir de manera más uniforme
-            if i == 0:
-                initial_nodes.append(0)  # El primero siempre en el nodo 0
-            else:
-                # Los demás en nodos distribuidos
-                node_offset = (i * (total_nodes - 1)) // Options.lifters
-                initial_nodes.append(min(node_offset, total_nodes - 1))
-    else:
-        # Para planned, todos empiezan en el nodo 0
-        initial_nodes = [0] * Options.lifters
+    # Distribuir los lifters en diferentes nodos iniciales (tanto para random como planned)
+    total_nodes = M * M
+    initial_nodes = []
+    for i in range(Options.lifters):
+        # Distribuir de manera uniforme en todos los nodos disponibles
+        if i == 0:
+            initial_nodes.append(0)  # El primero siempre en el nodo 0
+        else:
+            # Los demás en nodos distribuidos uniformemente
+            # Distribuir de manera que se repartan por todo el mapa
+            node_offset = (i * (total_nodes - 1)) // max(Options.lifters - 1, 1)
+            initial_nodes.append(min(node_offset, total_nodes - 1))
     
     Positions = numpy.zeros((Options.lifters, 3))
     for i, p in enumerate(Positions):
@@ -144,15 +137,14 @@ def Init(Options):
             p[0] = Lifter.NodosVisita[currentNode][0]
             p[1] = Lifter.NodosVisita[currentNode][1]
             p[2] = Lifter.NodosVisita[currentNode][2]
-            # Si es random y hay múltiples lifters en el mismo nodo, agregar pequeño offset
-            if Options.method == "random":
-                # Contar cuántos lifters anteriores están en el mismo nodo
-                same_node_count = sum(1 for j in range(i) if initial_nodes[j] == currentNode)
-                if same_node_count > 0:
-                    # Pequeño offset para evitar superposición exacta
-                    angle_offset = (same_node_count * 2 * math.pi) / 8  # Distribuir en círculo
-                    p[0] += math.cos(angle_offset) * 1.5
-                    p[2] += math.sin(angle_offset) * 1.5
+            # Si hay múltiples lifters en el mismo nodo, agregar pequeño offset (tanto para random como planned)
+            # Contar cuántos lifters anteriores están en el mismo nodo
+            same_node_count = sum(1 for j in range(i) if initial_nodes[j] == currentNode)
+            if same_node_count > 0:
+                # Pequeño offset para evitar superposición exacta
+                angle_offset = (same_node_count * 2 * math.pi) / 8  # Distribuir en círculo
+                p[0] += math.cos(angle_offset) * 1.5
+                p[2] += math.sin(angle_offset) * 1.5
         lifters.append(Lifter.Lifter(Settings.DimBoard, 0.7, textures, i, p, currentNode, Options.method))
 
     # Crear basuras

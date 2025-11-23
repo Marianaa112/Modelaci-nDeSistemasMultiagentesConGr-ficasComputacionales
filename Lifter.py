@@ -58,29 +58,110 @@ def init_world(M):
     A = generar_matriz_adyacencia(matrix_size, matrix_size)
 
 def planGen(N, A):
+    """Genera rutas planeadas dinámicamente basándose en el tamaño de la matriz"""
+    global matrix_size
+    # Calcular M desde el tamaño de la matriz de adyacencia
+    if matrix_size is not None:
+        M = matrix_size
+    elif A is not None and len(A) > 0:
+        M = int(numpy.sqrt(len(A)))
+    else:
+        M = 5  # Valor por defecto
+    total_nodes = M * M
+    
+    # Nodos importantes: esquinas y bordes
+    top_left = 0
+    top_right = M - 1
+    bottom_left = M * (M - 1)
+    bottom_right = M * M - 1
+    
     match N:
         case 1:
-            # Un solo agente: zigzag 
-            return [[0, 1, 2, 3, 4, 9, 8, 7, 6, 5, 10, 11, 12, 13, 14, 19, 18, 17, 16, 15, 20, 21, 22, 23, 24, 0]]
+            # Un solo agente: zigzag a través de toda la matriz
+            route = []
+            for i in range(M):
+                if i % 2 == 0:
+                    # De izquierda a derecha
+                    for j in range(M):
+                        route.append(i * M + j)
+                else:
+                    # De derecha a izquierda
+                    for j in range(M - 1, -1, -1):
+                        route.append(i * M + j)
+            route.append(0)  # Volver al inicio
+            return [route]
+            
         case 2:
-            # Dos agentes
-            return [
-                [0, 1, 2, 3, 4, 9, 14, 19, 24, 23, 18, 13, 8, 7, 12, 0],  # Ruta 1
-                [5, 10, 15, 20, 21, 22, 17, 16, 11, 6, 0]  # Ruta 2
-            ]
+            # Dos agentes: dividir la matriz en dos zonas
+            mid_point = M // 2
+            route1 = []
+            route2 = []
+            
+            # Ruta 1: parte superior
+            for i in range(mid_point):
+                if i % 2 == 0:
+                    for j in range(M):
+                        route1.append(i * M + j)
+                else:
+                    for j in range(M - 1, -1, -1):
+                        route1.append(i * M + j)
+            route1.append(0)
+            
+            # Ruta 2: parte inferior
+            for i in range(mid_point, M):
+                if (i - mid_point) % 2 == 0:
+                    for j in range(M):
+                        route2.append(i * M + j)
+                else:
+                    for j in range(M - 1, -1, -1):
+                        route2.append(i * M + j)
+            route2.append(0)
+            
+            return [route1, route2]
+            
         case 3:
-            # Tres agentes
-            return [
-                [0, 1, 2, 3, 4, 9, 14, 19, 24, 23, 18, 13, 8, 0],  # Ruta 1
-                [5, 10, 15, 20, 21, 22, 17, 12, 7, 0],  # Ruta 2
-                [0, 5, 6, 11, 16, 0]  # Ruta 3
-            ]
+            # Tres agentes: dividir en tres zonas
+            zone_size = M // 3
+            route1 = []
+            route2 = []
+            route3 = []
+            
+            # Ruta 1: primera zona
+            for i in range(zone_size):
+                for j in range(M):
+                    route1.append(i * M + j)
+            route1.append(0)
+            
+            # Ruta 2: segunda zona
+            for i in range(zone_size, 2 * zone_size):
+                for j in range(M):
+                    route2.append(i * M + j)
+            route2.append(0)
+            
+            # Ruta 3: tercera zona
+            for i in range(2 * zone_size, M):
+                for j in range(M):
+                    route3.append(i * M + j)
+            route3.append(0)
+            
+            return [route1, route2, route3]
+            
         case _:
-            # Para más de 3 agentes, usar rutas básicas
-            basic_routes = []
-            for i in range(N):
-                basic_routes.append([0, 1, 2, 3, 0])
-            return basic_routes
+            # Para más de 3 agentes, dividir la matriz en N zonas
+            routes = []
+            nodes_per_agent = total_nodes // N
+            
+            for agent_idx in range(N):
+                route = []
+                start_node = agent_idx * nodes_per_agent
+                end_node = (agent_idx + 1) * nodes_per_agent if agent_idx < N - 1 else total_nodes
+                
+                for node in range(start_node, end_node):
+                    route.append(node)
+                route.append(0)  # Volver al inicio
+                routes.append(route)
+            
+            return routes
 
 def get_random_neighbor(current_node, A):
     """Obtiene un vecino aleatorio del nodo actual usando la matriz de adyacencia"""
@@ -253,8 +334,29 @@ class Lifter:
         return Direccion, Distancia
 
     def isFinalNode(self, node):
-        """Verifica si es un nodo final importante de la ruta"""
-        final_nodes = [24, 4, 9, 14, 19]
+        """Verifica si es un nodo final importante de la ruta (esquinas y bordes)"""
+        global matrix_size, A
+        # Calcular M desde el tamaño de la matriz de adyacencia
+        if matrix_size is not None:
+            M = matrix_size
+        elif A is not None and len(A) > 0:
+            M = int(numpy.sqrt(len(A)))
+        else:
+            M = 5  # Valor por defecto
+        total_nodes = M * M
+        
+        # Nodos finales: esquinas y nodos del borde derecho
+        final_nodes = [
+            0,  # top-left
+            M - 1,  # top-right
+            M * (M - 1),  # bottom-left
+            M * M - 1  # bottom-right
+        ]
+        
+        # Agregar nodos del borde derecho (columna final)
+        for i in range(1, M - 1):
+            final_nodes.append(i * M + (M - 1))
+        
         return node in final_nodes
     
     def isInTrashArea(self):
