@@ -239,6 +239,8 @@ class Lifter:
         self.last_avoidance_node = None  # Último nodo al que cambió para evitar
         self.avoidance_count = 0  # Contador de evasiones consecutivas
         self.interference_count = 0  # Contador de interferencias/entorpecimientos (se incrementa en checkCollisions)
+        self.temporary_avoidance_node = None  # Nodo temporal para evasión (planned)
+        self.avoiding = False  # Flag para indicar que está evitando
 
         ensure_data_directory()  # Asegurar que la carpeta existe
         self.csv_file = create_timestamp_filename(idx, method)
@@ -393,6 +395,17 @@ class Lifter:
         if self.workCompleted:
             return self.currentNode
         
+        # Si está evitando y tiene un nodo temporal, usarlo primero
+        if self.method == "planned" and self.avoiding and self.temporary_avoidance_node is not None:
+            # Si ya llegó al nodo temporal, volver a la ruta normal
+            if self.currentNode == self.temporary_avoidance_node:
+                self.avoiding = False
+                self.temporary_avoidance_node = None
+                return self._get_next_planned_node(NodoActual)
+            else:
+                # Seguir hacia el nodo temporal
+                return self.temporary_avoidance_node
+        
         if self.method == "planned":
             return self._get_next_planned_node(NodoActual)
         else:
@@ -478,38 +491,85 @@ class Lifter:
                 print(f"El agente {self.idx} - Trabajo completado. Esperando en el nodo 0.")
             return
         
-        # Si detectó otro lifter cercano y es random, cambiar dirección de forma más agresiva
-        if self.nearby_lifter_detected and self.method == "random" and self.avoidance_cooldown <= 0:
+        # Si detectó otro lifter cercano (random o planned), cambiar dirección de forma más agresiva
+        if self.nearby_lifter_detected and self.avoidance_cooldown <= 0:
             if not self.isInTrashArea() and self.status == "searching":
-                # Cambiar a un nodo aleatorio diferente, evitando el nodo actual y el siguiente
-                neighbors = []
-                for i in range(len(A)):
-                    if A[self.currentNode][i] == 1 and i != self.currentNode:
-                        # Evitar el siguiente nodo actual y el último nodo de evasión si es muy reciente
-                        if i != self.nextNode and (i != self.last_avoidance_node or self.avoidance_count < 3):
-                            neighbors.append(i)
-                
-                if neighbors:
-                    # Preferir nodos que no hayan sido visitados recientemente (últimos 5 nodos)
-                    unvisited_neighbors = [n for n in neighbors if n not in list(self.visited_nodes)[-5:]]
-                    if unvisited_neighbors:
-                        self.nextNode = random.choice(unvisited_neighbors)
-                    else:
-                        # Si todos fueron visitados, elegir aleatoriamente
-                        self.nextNode = random.choice(neighbors)
+                if self.method == "random":
+                    # Para random: cambiar a un nodo aleatorio diferente
+                    neighbors = []
+                    for i in range(len(A)):
+                        if A[self.currentNode][i] == 1 and i != self.currentNode:
+                            # Evitar el siguiente nodo actual y el último nodo de evasión si es muy reciente
+                            if i != self.nextNode and (i != self.last_avoidance_node or self.avoidance_count < 3):
+                                neighbors.append(i)
                     
-                    self.last_avoidance_node = self.nextNode
-                    self.avoidance_count += 1
-                    # Incrementar interferencia solo cuando realmente cambia de dirección
-                    self.interference_count += 1
-                    self.avoidance_cooldown = 0.15  # Cooldown más corto para respuesta más rápida
-                    print(f"El agente {self.idx} (random) detectó otro lifter, cambiando dirección al nodo {self.nextNode}")
-                else:
-                    # Si no hay vecinos disponibles, forzar cambio de dirección inmediato
-                    # Cambiar la dirección actual para alejarse
-                    self.Direction[0] *= -1
-                    self.Direction[2] *= -1
-                    self.avoidance_cooldown = 0.1
+                    if neighbors:
+                        # Preferir nodos que no hayan sido visitados recientemente (últimos 5 nodos)
+                        unvisited_neighbors = [n for n in neighbors if n not in list(self.visited_nodes)[-5:]]
+                        if unvisited_neighbors:
+                            self.nextNode = random.choice(unvisited_neighbors)
+                        else:
+                            # Si todos fueron visitados, elegir aleatoriamente
+                            self.nextNode = random.choice(neighbors)
+                        
+                        self.last_avoidance_node = self.nextNode
+                        self.avoidance_count += 1
+                        # Incrementar interferencia solo cuando realmente cambia de dirección
+                        self.interference_count += 1
+                        self.avoidance_cooldown = 0.15  # Cooldown más corto para respuesta más rápida
+                        print(f"El agente {self.idx} (random) detectó otro lifter, cambiando dirección al nodo {self.nextNode}")
+                    else:
+                        # Si no hay vecinos disponibles, forzar cambio de dirección inmediato
+                        # Cambiar la dirección actual para alejarse
+                        self.Direction[0] *= -1
+                        self.Direction[2] *= -1
+                        self.avoidance_cooldown = 0.1
+                elif self.method == "planned":
+                    # Para planned: desviarse temporalmente a un nodo vecino que no esté en la ruta inmediata
+                    neighbors = []
+                    for i in range(len(A)):
+                        if A[self.currentNode][i] == 1 and i != self.currentNode:
+                            # Preferir nodos que no sean el siguiente en la ruta
+                            if i != self.nextNode:
+                                neighbors.append(i)
+                    
+                    if neighbors:
+                        # Elegir un vecino que esté en dirección opuesta o perpendicular
+                        # Calcular dirección hacia el siguiente nodo en la ruta
+                        if self.nextNode < len(NodosVisita):
+                            route_dir = NodosVisita[self.nextNode] - self.Position
+                            route_dir[1] = 0
+                            route_dir /= numpy.linalg.norm(route_dir) if numpy.linalg.norm(route_dir) > 0 else 1
+                            
+                            # Elegir el vecino que esté más en dirección opuesta
+                            best_neighbor = neighbors[0]
+                            max_dot = -1
+                            for n in neighbors:
+                                if n < len(NodosVisita):
+                                    neighbor_dir = NodosVisita[n] - self.Position
+                                    neighbor_dir[1] = 0
+                                    neighbor_dir /= numpy.linalg.norm(neighbor_dir) if numpy.linalg.norm(neighbor_dir) > 0 else 1
+                                    dot = numpy.dot(route_dir, neighbor_dir)
+                                    if dot < max_dot:
+                                        max_dot = dot
+                                        best_neighbor = n
+                            
+                            self.temporary_avoidance_node = best_neighbor
+                            self.nextNode = best_neighbor
+                            self.avoiding = True
+                            self.interference_count += 1
+                            self.avoidance_cooldown = 0.3
+                            print(f"El agente {self.idx} (planned) detectó otro lifter, desviándose temporalmente al nodo {self.nextNode}")
+                        else:
+                            # Si no hay vecinos, cambiar dirección temporalmente
+                            self.Direction[0] *= -1
+                            self.Direction[2] *= -1
+                            self.avoidance_cooldown = 0.1
+                    else:
+                        # Si no hay vecinos, cambiar dirección temporalmente
+                        self.Direction[0] *= -1
+                        self.Direction[2] *= -1
+                        self.avoidance_cooldown = 0.1
             self.nearby_lifter_detected = False
         
         Direccion, Distancia = self.ComputeDirection(self.Position, self.nextNode)
@@ -521,6 +581,11 @@ class Lifter:
             # Resetear contador de evasiones cuando llega a un nodo
             if self.avoidance_count > 0:
                 self.avoidance_count = 0
+            
+            # Si estaba evitando y llegó al nodo temporal, resetear el flag
+            if self.avoiding and self.temporary_avoidance_node == self.currentNode:
+                self.avoiding = False
+                self.temporary_avoidance_node = None
 
             if self.returningToPickup:
                 print(f"El agente {self.idx} regresó al nodo de recolección {self.lastPickupNode}.")
@@ -539,8 +604,8 @@ class Lifter:
 
         match self.status:
             case "searching":
-                # Verificar colisiones durante el movimiento (solo para random)
-                if self.method == "random" and self.nearby_lifter_detected and not self.isInTrashArea():
+                # Verificar colisiones durante el movimiento (para random y planned)
+                if self.nearby_lifter_detected and not self.isInTrashArea():
                     # Si detecta otro lifter durante el movimiento, ajustar dirección más agresivamente
                     if self.avoidance_cooldown <= 0:
                         # Aplicar un ajuste más fuerte de dirección perpendicular para evitar

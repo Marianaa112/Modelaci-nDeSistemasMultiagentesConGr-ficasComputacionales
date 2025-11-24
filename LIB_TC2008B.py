@@ -198,6 +198,11 @@ def checkCollisions():
                 if in_trash_area1 and in_trash_area2:
                     continue
                 
+                # Evitar colisiones para ambos métodos (random y planned), excepto en área de tirar basura
+                # Si ambos están en el área de tirar basura, permitir colisiones/amontonamiento
+                if in_trash_area1 and in_trash_area2:
+                    continue
+                
                 # Si ambos son random y al menos uno está fuera del área de tirar basura
                 if lifter1.method == "random" and lifter2.method == "random":
                     if not in_trash_area1 and not in_trash_area2:
@@ -217,11 +222,24 @@ def checkCollisions():
                     # Lifter2 es random y está fuera, debe evitar
                     lifter2.nearby_lifter_detected = True
                 
-                # Para planned: contar interferencias solo si están muy cerca (amontonamiento real)
+                # Para planned: también evitar colisiones fuera del área de tirar basura
                 if lifter1.method == "planned" and lifter2.method == "planned":
-                    if distance <= lifter1.radiusCol * 1.2:  # Muy cerca = amontonamiento real
-                        lifter1.interference_count += 1
-                        lifter2.interference_count += 1
+                    if not in_trash_area1 and not in_trash_area2:
+                        # Ambos están fuera, ambos deben evitar
+                        lifter1.nearby_lifter_detected = True
+                        lifter2.nearby_lifter_detected = True
+                    elif not in_trash_area1:
+                        # Solo lifter1 está fuera, solo él evita
+                        lifter1.nearby_lifter_detected = True
+                    elif not in_trash_area2:
+                        # Solo lifter2 está fuera, solo él evita
+                        lifter2.nearby_lifter_detected = True
+                elif lifter1.method == "planned" and not in_trash_area1:
+                    # Lifter1 es planned y está fuera, debe evitar
+                    lifter1.nearby_lifter_detected = True
+                elif lifter2.method == "planned" and not in_trash_area2:
+                    # Lifter2 es planned y está fuera, debe evitar
+                    lifter2.nearby_lifter_detected = True
 
 def display():
     global lifters, basuras, delta, work_completed_time, all_work_done, final_trash_count, Options_global
