@@ -17,13 +17,13 @@ python Main.py Simulacion --lifters 3 --Basuras 6 --method random --Tmax 60 --M 
 **Con archivo JSON:**
 
 ```bash
-python Main.py Simulacion --config config.json
+python Main.py Simulacion --config config_example.json
 ```
 
 **Combinando ambos (JSON + argumentos que sobrescriben):**
 
 ```bash
-python Main.py Simulacion --config config.json --lifters 5 --Tmax 120
+python Main.py Simulacion --config config_example.json --lifters 5 --Tmax 120
 ```
 
 ### Ejemplos de uso
