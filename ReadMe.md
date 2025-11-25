@@ -123,3 +123,6 @@ Cada archivo contiene información sobre:
 - Posición (x, y, z)
 - Nodo actual y siguiente
 - Ruta (si es planned)
+
+## Documentación completa del proyecto
+[![Abrir PDF](https://img.shields.io/badge/PDF-Abrir-red)](./E1_ActividadIntegradora.pdf)
