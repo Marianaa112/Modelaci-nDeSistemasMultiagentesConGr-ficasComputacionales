@@ -126,3 +126,6 @@ Cada archivo contiene información sobre:
 
 ## Documentación completa del proyecto
 [![Abrir PDF](https://img.shields.io/badge/PDF-Abrir-red)](./E1_ActividadIntegradora.pdf)
+
+## Video de simulación en OpenGL
+[![Ver Video](https://img.youtube.com/vi/ID_DEL_VIDEO/0.jpg)]([https://www.youtube.com/watch?v=ID_DEL_VIDEO](https://youtu.be/CnlFNbfakMo))
